@@ -1,0 +1,183 @@
+---
+title: "Homework 4"
+author: "Yixin Wang"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(discrim)
+library(poissonreg)
+library(corrr)
+library(klaR)
+library(ISLR)
+library(ISLR2)
+library(sf)
+tidymodels_prefer()
+setwd('/Users/galaxy/Desktop/PSTAT_131')
+set.seed(3435)
+```
+
+### Question 1
+
+Split the data, stratifying on the outcome variable, `survived.` You should choose the proportions to split the data into. Verify that the training and testing data sets have the appropriate number of observations.
+
+```{r}
+titanic <- read_csv(file = "titanic.csv") %>% 
+  mutate(survived = factor(survived, 
+                           levels = c("Yes", "No")),
+         pclass = factor(pclass))
+titanic
+```
+
+```{r}
+titanic_split <- titanic %>%
+  initial_split(strata = survived, prop = 0.7)
+titanic_train <- training(titanic_split)
+titanic_test <- testing(titanic_split)
+
+titanic_recipe <- recipe(survived ~ pclass + sex + age + sib_sp + parch + fare, titanic_train) %>%
+  step_impute_linear(age) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_interact(~ starts_with("sex"):age + age:fare)
+```
+
+```{r}
+dim(titanic_train)
+```
+
+```{r}
+dim(titanic_test)
+```
+
+### Question 2
+
+Fold the **training** data. Use k-fold cross-validation, with $k = 10$.
+
+```{r}
+titanic_folds <- vfold_cv(titanic_train, v = 10)
+titanic_folds
+```
+
+### Question 3
+
+In your own words, explain what we are doing in Question 2. What is *k*-fold cross-validation? Why should we use it, rather than simply fitting and testing models on the entire training set? If we **did** use the entire training set, what resampling method would that be?
+
+In Question 2, we randomly partitioned the training titanic sample into 10 sub samples. *k*-fold cross-validation is randomly divide the data into *k* groups(or folds) of equal sizes. Then hold out the first fold as the validation set, and the model is fit on the remaining k-1 folds. Then repeat the process for k times. We use it because the observations are used for training and validation, and observation is used for validation once. When we use the entire training set, the method will be validation set approach.
+
+### Question 4
+
+Set up workflows for 3 models:
+
+1. A logistic regression with the `glm` engine;
+2. A linear discriminant analysis with the `MASS` engine;
+3. A quadratic discriminant analysis with the `MASS` engine.
+
+How many models, total, across all folds, will you be fitting to the data? To answer, think about how many folds there are, and how many models you’ll fit to each fold.
+
+```{r}
+log_reg <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+log_wkflow <- workflow() %>%
+  add_model(log_reg) %>%
+  add_recipe(titanic_recipe)
+
+log_fit <- fit_resamples(log_wkflow, titanic_folds)
+```
+
+```{r}
+lda_mod <- discrim_linear() %>%
+  set_mode("classification") %>%
+  set_engine("MASS") 
+
+lda_wkflow <- workflow() %>%
+  add_model(lda_mod) %>%
+  add_recipe(titanic_recipe)
+
+lda_fit <- fit_resamples(lda_wkflow, titanic_folds)
+```
+
+```{r}
+qda_mod <- discrim_quad() %>%
+  set_mode("classification") %>%
+  set_engine("MASS")
+
+qda_wkflow <- workflow() %>%
+  add_model(qda_mod) %>%
+  add_recipe(titanic_recipe)
+
+qda_fit <- fit_resamples(qda_wkflow, titanic_folds)
+```
+
+There are ten folds for each model. 
+
+### Question 5
+
+Fit each of the models created in Question 4 to the folded data.
+
+```{r}
+log_fit <- fit_resamples(log_wkflow, titanic_folds)
+lda_fit <- fit_resamples(lda_wkflow, titanic_folds)
+qda_fit <- fit_resamples(qda_wkflow, titanic_folds)
+```
+
+### Question 6
+
+Use `collect_metrics()` to print the mean and standard errors of the performance metric accuracy across all folds for each of the four models.
+
+Decide which of the 3 fitted models has performed the best. Explain why. *(Note: You should consider both the mean accuracy and its standard error.)*
+
+```{r}
+collect_metrics(log_fit)
+```
+
+```{r}
+collect_metrics(lda_fit)
+```
+
+```{r}
+collect_metrics(qda_fit)
+```
+
+The logistic regression has performed the best, since the mean accuracy is high and standard error is low. 
+
+### Question 7
+
+Now that you’ve chosen a model, fit your chosen model to the entire training dataset (not to the folds).
+
+```{r}
+log_fit1 <- fit(log_wkflow, titanic_train)
+log_fit1 %>% tidy()
+```
+
+### Question 8
+
+Finally, with your fitted model, use `predict()`, `bind_cols()`, and `accuracy()` to assess your model’s performance on the testing data!
+
+Compare your model’s testing accuracy to its average accuracy across folds. Describe what you see.
+
+```{r}
+fit_test <- predict(log_fit1, titanic_test) %>%
+  bind_cols(predict(log_fit1, titanic_test, type = "prob")) %>%
+  bind_cols(titanic_test %>% select(survived))
+```
+
+```{r}
+fit_test %>%
+  accuracy(truth = survived, estimate = .pred_class)
+```
+
+The model's testing accuracy is close to the average accuracy across folds.
