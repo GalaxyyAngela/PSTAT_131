@@ -1,0 +1,39 @@
+---
+title: "Top Hits Spotify"
+author: "Yixin Wang"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: show
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+## An Overview of Dataset
+
+The dataset is downloaded as a csv file and is obtained from (https://www.kaggle.com/datasets/paradisejoy/top-hits-spotify-from-20002019?resource=download&select=songs_normalize.csv)
+
+```{r}
+top_hits <- read.csv("songs_normalize.csv")
+summary(top_hits)
+```
+
+In summary, there are 2000 observations and 18 predictors. I think I will work with numbers mostly and there is no missing data.
+
+## An Overview of Research Questions
+
+In this dataset, I am interested in predicting the popularity of these songs. The popularity is between 0 and 89. I think the energy, danceability, loudness, speechiness, liveness, acoustcness would all be useful in predicting popularity and they should be positively related. 
+
+## Proposed Project Timeline
+
+Since my data memo finished late, I am going to start the exploratory data analysis after the data memo passed immediately.
+
+## Questions or Concerns
+
+I think everything is fine for now. 
