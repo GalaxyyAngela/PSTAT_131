@@ -1,5 +1,5 @@
 ---
-title: "Top Hits Spotify"
+title: "Final Project: Top Hits in Spotify"
 author: "Yixin Wang"
 output: 
   html_document:
@@ -15,25 +15,575 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE,
                       warning = FALSE)
 ```
 
-## An Overview of Dataset
+## Introduction
+
+Spotify is a digital music, podcast, and video service that gives you access to millions of songs and other content from creators all over the world. Basic functions such as playing music are totally free, but you can also choose to upgrade to Spotify Premium. Spotify is available across a range of devices, including computers, phones, tablets, speakers, TVs, and cars. This data set is about the top 2000 tracks on Spotify from 2000-2019.
+
+The purpose of this project is to predict the popularity of a specific song. 
+
+### An Overview of Dataset
 
 The dataset is downloaded as a csv file and is obtained from (https://www.kaggle.com/datasets/paradisejoy/top-hits-spotify-from-20002019?resource=download&select=songs_normalize.csv)
 
+Here are some of the key variables that are helpful for this project:
+
+- ```artist```: The name of the artist.
+- ```song```: The name of the track.
+- ```duration_ms```: Duration of the track in milliseconds.
+- ```explicit```: The lyrics or content of a song or a music video contain one or more of the criteria which could be considered offensive or unsuitable for children.
+- ```year```: Release Year of the track.
+- ```popularity```: The higher the value the more popular the song is.
+- ```danceability```: It describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
+- ```energy```: It is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity.
+- ```key```: The key the track is in. Integers map to pitches using standard Pitch Class notation. E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. If no key was detected, the value is -1.
+- ```acousticness```: A confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0 represents high confidence the track is acoustic.
+- ```liveness```: Detects the presence of an audience in the recording. Higher liveness values represent an increased probability that the track was performed live. A value above 0.8 provides strong likelihood that the track is live.
+- ```valence```: A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).
+
+### Loading Data and Packages
+
 ```{r}
-top_hits <- read.csv("songs_normalize.csv")
-summary(top_hits)
+library(tidyverse)
+library(tidymodels)
+library(lubridate)
+library(skimr)
+library(patchwork)
+library(janitor)
+library(ggplot2)
+library(corrplot)
+library(corrr)
+set.seed(1106)
 ```
 
-In summary, there are 2000 observations and 18 predictors. I think I will work with numbers mostly and there is no missing data.
+```{r}
+hits <- read.csv(file = 'songs_normalize.csv')
+dim(hits)
+```
 
-## An Overview of Research Questions
+In this case, we have 2000 observations and 18 predictors.
 
-In this dataset, I am interested in predicting the popularity of these songs. The popularity is between 0 and 89. I think the energy, danceability, loudness, speechiness, liveness, acoustcness would all be useful in predicting popularity and they should be positively related. 
+- convert the duration into seconds
 
-## Proposed Project Timeline
+```{r}
+hits <- hits %>%
+  mutate(
+    # convert the duration milliseconds to seconds
+    duration_ms = duration_ms / 1000
+)
+```
 
-Since my data memo finished late, I am going to start the exploratory data analysis after the data memo passed immediately.
+### Data Split
 
-## Questions or Concerns
+```{r}
+hits_split <- hits %>%
+  initial_split(prop = 0.8)
 
-I think everything is fine for now. 
+hits_train <- training(hits_split)
+hits_test <- testing(hits_split)
+```
+
+## Exploratory Data Analysis
+
+### Genres
+
+```{r}
+ggplot(hits, aes(genre)) + 
+  geom_bar() +
+  labs(
+    title = "Count of Songs by Genre",
+    x = "Genres",
+    y = "Count",
+  ) +
+  # It is able to read labels better
+  coord_flip()
+```
+
+Based on the graph, the pop genre seems to have the largest amounts of songs. Meanwhile, there are a lot of top hits songs are pop related. It makes sense since nowadays most of the music type is pop related. 
+
+### Popularity
+
+```{r}
+ggplot(hits, aes(popularity)) +
+  geom_histogram(bins = 40, color = "white") +
+  labs(
+    title = "Histogram of Songs by Popularity"
+  )
+```
+
+Looking at the graph, it is approximately skewed left.
+
+```{r}
+ggplot(hits, aes(popularity)) + 
+  geom_histogram(bins = 10, color = "white") +
+  facet_wrap(~genre, scales = "free_y") +
+  labs(
+    title = "Histogram of Popularity by Genres"
+  )
+```
+
+```{r}
+ggplot(hits, aes(reorder(genre, popularity), popularity)) +
+  geom_boxplot(varwidth = TRUE) +
+  coord_flip() +
+  labs(
+    title = "Popularity of songs by Genres",
+    x = "Genre"
+  )
+```
+
+It seems like most of the ```genre``` are quite popular. It makes sense that certain genre is more popular than others. For example, country and folk tend to have lower popularity. Meanwhile, it seems like there are a lot of genres that have wide distributions of popularity. 
+
+#### Danceability
+
+```{r}
+hits %>%
+  ggplot(aes(danceability, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Danceability"
+  )
+```
+
+#### Energy
+
+```{r}
+hits %>%
+  ggplot(aes(energy, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Energy"
+  )
+```
+
+Based on both ```popluarity``` and ```danceability```, ```popularity``` and ```energy```, It seems like songs with high danceability and high energy tend to have high popularity. However, there are a lot of exceptions in the graph as well.
+
+#### Valence
+
+```{r}
+hits %>%
+  ggplot(aes(valence, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Valence"
+  )
+```
+
+#### Tempo
+
+```{r}
+hits %>%
+  ggplot(aes(tempo, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Tempo"
+  )
+```
+
+From both ```valence``` and ```tempo```, the graph does not seem to have a correlation with popularity. Thus, I would not use these two variables in my model.
+
+#### Liveness
+
+```{r}
+hits %>%
+  ggplot(aes(liveness, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Liveness"
+  )
+```
+
+#### Acousticness
+
+```{r}
+hits %>%
+  ggplot(aes(acousticness, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Acousticness"
+  )
+```
+
+#### Speechiness
+
+```{r}
+hits %>%
+  ggplot(aes(speechiness, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Speechiness"
+  )
+```
+
+From the graphs of ```liveness```, ```acousticness```, and ```speechiness``` above, they tend to have negative correlation with popularity. We may consider to take these variables into account. 
+
+#### Loudness
+
+```{r}
+hits %>%
+  ggplot(aes(loudness, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Loudness"
+  )
+```
+
+In the graph, the ```loudness``` has a approximately positive correlation with popularity. I will include it in the model.
+
+#### Key
+
+```{r}
+hits %>%
+  ggplot(aes(key, popularity)) +
+  geom_point(alpha = 0.1) +
+  stat_summary(fun.y=mean, colour="red", geom="line", size = 3) +
+  labs(
+    title = "Popularity vs. Key"
+  )
+```
+
+Based on the graph, the ```key``` seems to have average distribution with popularity. Thus, we may not include it in the model. 
+
+#### Year
+
+```{r}
+hits %>%
+  ggplot(aes(year, popularity)) +
+  geom_point(alpha = 0.1) +
+  stat_summary(fun.y=mean, colour="red", geom="line", size = 3) +
+  labs(
+    title = "Popularity vs. Year"
+  )
+```
+
+I think that time should not related to the popularity. It could be checked by the graph above. Every year seems to have songs that have high and low popularity. Thus, I may not include ```year``` in the model. 
+
+#### Duration
+
+```{r}
+hits %>%
+  ggplot(aes(duration_ms, popularity)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Popularity vs. Duration in second"
+  )
+```
+
+The duration of the songs should not have a relationship with the popularity, since the duration of each song is approximately same without a huge difference in time.  
+
+#### Artist
+
+Sometimes, the artist may also affect the popularity of their songs. Since artists are the main interpretation of the songs, their fame may also affect the popularity of songs. 
+
+```{r}
+# want to be able to sort by frequent artists since some artists have been left or there are data cleaning errors
+artist_frequent <- hits %>% 
+  group_by(artist) %>% 
+  count() %>% 
+  arrange(n) %>% 
+  filter(n >= 10) %>% 
+  pull(artist)
+
+# store the median so we can include it in our visualization below
+median_artist_songs <- hits %>% 
+  #filter only frequent artists
+  filter(artist %in% artist_frequent) %>% 
+  group_by(artist) %>% 
+  count() %>% 
+  ungroup() %>% 
+  # summarize the median
+  summarize(median = median(n))
+
+hits %>% 
+  # has to be a frequent artist
+  filter(artist %in% artist_frequent) %>% 
+  group_by(year, artist) %>% 
+  count() %>% 
+  ggplot(aes(fct_reorder(artist, n), n, fill = year)) +
+  geom_col() + 
+  coord_flip() +
+  geom_hline(yintercept=median_artist_songs$median, linetype="dashed", 
+             color = "red") +
+  labs(
+    title = "Number of Songs Made by Artist",
+    subtitle = "red line represents median",
+    y = "",
+    x = ""
+  )
+```
+
+Since there are a lot of artists, I rule out the artists who have less than 10 top hit songs from 1999 to 2019. It seems like some artists have a lot of top hit songs in some years and we are more familiar with the name of artists who have more than 10 top hit songs.
+
+Based on the graph of Count of Songs by genre. We could see that there are a lot of songs in pop; hip hop, pop; hip hop, pop, R&B; and pop, Dance/Electronic. Thus, we compute the median popularity per artist per genre. Since there are a lot of artists who have top hits songs each year, the y-axis might not show up clearly.  
+
+```{r}
+# Four main genres
+hits %>%
+  filter(genre == "pop" | genre == "hip hop, pop" | genre == "hip hop, pop, R&B" | genre == "pop, Dance/Electronic") %>%
+  ggplot(aes(reorder(artist, popularity), popularity)) +
+  geom_boxplot(varwidth = TRUE) +
+  coord_flip() +
+  facet_wrap(~genre, scales = "free_y", ncol = 1) +
+  labs(
+    title = "Distribution of Popularity of each Artist",
+    subtitle = "Main Genres"
+  )
+```
+
+These graphs are similar to each other but have slight differences. 
+
+```{r}
+# The other four genres
+hits %>% 
+  filter(genre == "rock" | genre == "R&B" | genre == "pop, latin" | genre == "Dance/Electronic") %>% 
+  ggplot(aes(reorder(artist, popularity), popularity)) +
+  geom_boxplot(varwidth = TRUE) + 
+  coord_flip() +
+  facet_wrap(~genre, scales = "free_y", ncol = 1) +
+  labs(
+    title = "Distribution of Popularity of each Artist",
+    subtitle = "Main Genres"
+  )
+```
+
+The differences in these four graphs are clearer than the main 4 genres. Thus, we should include ```artist``` in our model.
+
+### Correlation Matrix
+
+By using the correlation matrix, we could see the correlation with these variables.
+
+```{r}
+library("dplyr")
+corr_hits <- select_if(hits, is.numeric) %>% 
+  correlate()
+rplot(corr_hits)
+```
+
+Based on the correlation matrix, we can see that ```danceability```, ```energy```, and ```loudness``` are positive correlated. 
+
+## Model Building
+
+We fold the data in 5 folds.
+
+```{r}
+hits_fold <- vfold_cv(hits_train, v = 5)
+```
+
+#### Repeated Cross Validation
+
+I would like to fit these models in my data set.
+
+- Random Forest
+- Boosted Trees
+- Nearest Neighbors
+- SVM
+
+### Random Forest
+
+We tune `mtry`, `trees`, `min_n` and we let `levels = 5`. We create a workflow for this model.
+
+```{r}
+rf_model <- 
+  rand_forest(
+    min_n = tune(),
+    mtry = tune(), 
+    trees = tune(),
+    mode = "regression") %>%
+  set_engine("ranger")
+
+rf_grid <- grid_regular(mtry(c(1,20)), trees(c(100,2000)), min_n(c(1,20)), levels = 5)
+
+rf_workflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_formula(popularity ~ artist + danceability + energy + loudness + speechiness + acousticness + liveness + genre)
+```
+
+```{r}
+rf_tune_res <- tune_grid(
+  rf_workflow,
+  resamples = hits_fold,
+  grid = rf_grid
+)
+autoplot(rf_tune_res)
+```
+
+```{r}
+best_rf <- select_best(rf_tune_res)
+rf_final <- finalize_workflow(rf_workflow, best_rf)
+rf_final_fit <- fit(rf_final, data = hits_train)
+rf_final_fit %>% extract_fit_engine()
+```
+
+```{r}
+final_rf_model = augment(rf_final_fit, new_data = hits_train)
+bind_rows(
+  rmse(final_rf_model, truth = popularity, estimate = .pred),
+  rsq(final_rf_model, truth = popularity, estimate = .pred))
+```
+
+The RMSE is high and the R-squared is low.
+
+### Boosted Trees
+
+We will utilize a boosted tree model now.
+
+library(xgboost)
+bt_model <- boost_tree(mtry = tune(), trees = tune(), min_n = tune()) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+bt_grid <- grid_regular(mtry(c(1,20)), trees(c(100,2000)), min_n(c(1,20)), levels = 5)
+
+bt_workflow <- workflow() %>%
+  add_model(bt_model) %>%
+  add_formula(popularity ~ artist + danceability + energy + loudness + speechiness + acousticness + liveness + genre)
+
+bt_tune_res <- tune_grid(
+  bt_workflow,
+  resamples = hits_fold,
+  grid = bt_grid
+)
+
+autoplot(bt_tune_res)
+
+
+best_bt <- select_best(bt_tune_res)
+bt_final <- finalize_workflow(bt_workflow, best_bt)
+bt_final_fit <- fit(bt_final, data = hits_train)
+
+
+
+final_bt_model <- augment(bt_final_fit, new_data = hits_train)
+bind_rows(
+  rmse(final_bt_model, truth = popularity, estimate = .pred),
+  rsq(final_bt_model, truth = popularity, estimate = .pred))
+
+I have tried the Boosted Trees Model, but it has the error. I think the reason may be my data is quite weird.
+
+### K Nearest Neighbors
+
+In this case, we will use K nearest neighbors models to fit our dataset. 
+
+
+library(kknn)
+
+hits_recipe <- recipe(formula = popularity ~ artist + danceability + energy + loudness + speechiness + acousticness + liveness + genre, data = hits_train) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors())
+
+knn_model <- nearest_neighbor(neighbors = tune(), mode = "regression") %>%
+  set_engine("kknn")
+
+knn_workflow <- workflow() %>%
+  add_model(knn_model) %>%
+  add_recipe(hits_recipe)
+
+
+knn_params <- parameters(knn_model)
+
+knn_grid <- grid_regular(knn_params, levels = 5)
+
+knn_tune <- knn_workflow %>%
+  tune_grid(
+    # what will it fit the workflow to
+    resamples = hits_fold,
+    # how does it complete the models in those workflows
+            grid = knn_grid)
+
+autoplot(knn_tune)
+
+
+best_knn <- select_best(knn_tune)
+knn_final <-finalize_workflow(knn_workflow, best_knn)
+knn_final_fit <- fit(knn_final, data = hits_train)
+
+
+
+final_knn_model <- augment(knn_final_fit, new_data = hits_train)
+bind_rows(
+  rmse(final_knn_model, truth = popularity, estimate = .pred),
+  rsq(final_knn_model, truth = popularity, estimate = .pred))
+
+When I use the code above, the K nearest Neighbors model also has the error message. It may because the data is abnormal.
+
+
+### Lasso Regression
+
+We will fit a lasso regression. We will use the ```glmnet``` engine for this model. 
+
+```{r}
+lasso_recipe <- recipe(formula = popularity ~ artist + danceability + energy + loudness + speechiness + acousticness + liveness + genre, data = hits_train) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  step_zv(all_predictors())
+
+lasso_spec <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_mode("regression") %>%
+  set_engine("glmnet")
+
+lasso_workflow <- workflow() %>%
+  add_recipe(lasso_recipe) %>%
+  add_model(lasso_spec)
+```
+
+```{r}
+penal_grid <-grid_regular(penalty(range = c(-5, 5)), levels = 50)
+lasso_tune_res <- tune_grid(
+  lasso_workflow,
+  resamples = hits_fold,
+  grid = penal_grid
+)
+
+autoplot(lasso_tune_res)
+```
+
+From the graph, `rmse` decreases and `rsq` increases.
+
+```{r}
+best_penalty <- select_best(lasso_tune_res, metric = "rsq")
+lasso_final <- finalize_workflow(lasso_workflow, best_penalty)
+lasso_final_fit <- fit(lasso_final, data = hits_train)
+```
+
+```{r}
+final_lasso_model <- augment(lasso_final_fit, new_data = hits_train)
+bind_rows(
+  rmse(final_lasso_model, truth = popularity, estimate = .pred),
+  rsq(final_lasso_model, truth = popularity, estimate = .pred))
+```
+The `rmse` is quite high and `rsq` is quite low. 
+
+
+
+### Results
+
+We look at the `rmse` of these models. 
+
+```{r}
+final_rf_model = augment(rf_final_fit, new_data = hits_test)
+final_lasso_model = augment(lasso_final_fit, new_data = hits_test)
+
+result_rmse <- bind_rows(
+  rmse(final_rf_model, truth = popularity, estimate = .pred),
+  rmse(final_lasso_model, truth = popularity, estimate = .pred)
+)
+result_rmse
+```
+The RMSE is quite high. Since the lower the RMSE, the better the model performance. In this case, the model may not have a good performance. Between these two models, random forest model has a little bit lower RMSE. 
+
+We look at the `rsq` of these models.
+
+```{r}
+result_rsq <- bind_rows(
+  rsq(final_rf_model, truth = popularity, estimate = .pred),
+  rsq(final_lasso_model, truth = popularity, estimate = .pred)
+)
+result_rsq
+```
+Based on the data, the random forest model has a little bit lower rsq. The random forest model could be the model we use to draw the conclusion.
+
+## Conclusion
+
+From the above analysis of the popularity of songs, the relationship among variables is not what I thought before. I think the data may be abnormal. The `rmse` is large and `rsq` is small. It may have the overfitting in the data. Overall, the popularity of songs may not relate to a variety of variables. Thus, the popularity of songs may not relate to these factors. We may consider the other reasons for the popularity of these songs.
